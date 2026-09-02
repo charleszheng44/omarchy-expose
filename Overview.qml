@@ -1050,10 +1050,8 @@ Item {
 
         var ordered = entries.slice();
         ordered.sort(function (a, b) {
-            var widthA = Math.sqrt(a.weight * a.ratio);
-            var widthB = Math.sqrt(b.weight * b.ratio);
-            if (widthA !== widthB)
-                return widthB - widthA;
+            if (a.ratio !== b.ratio)
+                return b.ratio - a.ratio;
             return a.index - b.index;
         });
 
@@ -1067,7 +1065,7 @@ Item {
             }
             var entry = ordered[entryIndex];
             rows[bestRow].entries.push(entry);
-            rows[bestRow].naturalWidth += Math.sqrt(entry.weight * entry.ratio);
+            rows[bestRow].naturalWidth += entry.ratio;
         }
 
         for (var sortRow = 0; sortRow < rows.length; sortRow++)
@@ -1086,8 +1084,11 @@ Item {
             var rowHeight = 0;
             for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
                 var entry = entries[entryIndex];
-                var previewWidth = scale * Math.sqrt(entry.weight * entry.ratio);
-                var previewHeight = scale * Math.sqrt(entry.weight / entry.ratio);
+                // A shared preview height keeps every card in the row on the
+                // same top and bottom lines; width still follows the window's
+                // native aspect ratio.
+                var previewHeight = scale;
+                var previewWidth = previewHeight * entry.ratio;
                 var card = {
                     index: entry.index,
                     width: previewWidth + padding * 2,
@@ -1115,10 +1116,9 @@ Item {
             var x = (width - row.width) / 2;
             for (var cardIndex = 0; cardIndex < row.cards.length; cardIndex++) {
                 var card = row.cards[cardIndex];
-                var align = ((card.index + outputRow) % 3) / 2;
                 result[card.index] = {
                     x: x,
-                    y: y + (row.height - card.height) * align,
+                    y: y,
                     width: card.width,
                     height: card.height
                 };
@@ -1140,11 +1140,9 @@ Item {
         var entries = [];
         for (var index = 0; index < count; index++) {
             var ratio = root.aspectRatioFor(toplevels[index]);
-            var adaptiveWeight = Math.max(0.72, Math.min(1.28, Math.sqrt(ratio / 1.6)));
             entries.push({
                 index: index,
                 ratio: ratio,
-                weight: adaptiveWeight,
                 extremity: Math.max(ratio, 1 / ratio)
             });
         }
@@ -1159,8 +1157,8 @@ Item {
         for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
             var entry = entries[entryIndex];
             high = Math.min(high,
-                (availableWidth - padding * 2) / Math.sqrt(entry.weight * entry.ratio),
-                (availableHeight - footerHeight - padding * 2 - footerSpacing) / Math.sqrt(entry.weight / entry.ratio));
+                (availableWidth - padding * 2) / entry.ratio,
+                availableHeight - footerHeight - padding * 2 - footerSpacing);
         }
         high = Math.max(1, high);
 
@@ -1171,8 +1169,8 @@ Item {
         var totalNaturalWidth = 0;
         var totalNaturalHeight = 0;
         for (var naturalIndex = 0; naturalIndex < entries.length; naturalIndex++) {
-            totalNaturalWidth += Math.sqrt(entries[naturalIndex].weight * entries[naturalIndex].ratio);
-            totalNaturalHeight += Math.sqrt(entries[naturalIndex].weight / entries[naturalIndex].ratio);
+            totalNaturalWidth += entries[naturalIndex].ratio;
+            totalNaturalHeight += 1;
         }
         var averageNaturalHeight = totalNaturalHeight / entries.length;
         var viewportRatio = Number(viewportRatioHint);
