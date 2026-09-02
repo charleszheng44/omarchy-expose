@@ -32,8 +32,13 @@ Rectangle {
     readonly property string applicationName: WindowModel.appIdFor(modelData) || "Application"
     readonly property string workspaceName: card.controller.workspaceName(modelData)
     readonly property string iconSource: card.controller.iconFor(modelData)
-    readonly property color outlineColor: focusedWindow ? Color.accent : (selected ? Color.menu.selectedText : Color.menu.border)
-    readonly property real outlineWidth: hovered ? Math.max(4, Style.hoverBorderWidth * 2) : (focusedWindow ? Math.max(2, Style.selectedBorderWidth) : (selected ? Math.max(2, Style.focusBorderWidth) : Math.max(1, Style.normalBorderWidth)))
+    // Match Omarchy's panel borders, while keeping every card outline to one
+    // physical pixel as requested.
+    readonly property var outlineSpec: focusedWindow || selected
+        ? Border.withWidth(Border.hyprlandActiveSpec(Color.accent, 1), 1)
+        : (hovered
+            ? Border.withWidth(Border.controlSpec("hover-cursor", Color.menu.text, Color.accent), 1)
+            : Border.withWidth(Border.surfaceSpec("menu", "border", Color.menu.border, 1), 1))
     // An excluded card keeps its last rectangle, so it neither
     // animates toward the origin nor flies back in from it.
     readonly property var packedRectSource: inLayout ? card.windowLayout[slot] : null
@@ -59,8 +64,8 @@ Rectangle {
     z: previewed ? 11 : (exitingPreview ? 10 : 0)
     radius: integratedFooter ? Style.cornerRadius : 0
     color: integratedFooter ? Color.menu.background : "transparent"
-    border.color: integratedFooter ? outlineColor : "transparent"
-    border.width: integratedFooter ? outlineWidth : 0
+    border.color: integratedFooter ? Border.color(outlineSpec) : "transparent"
+    border.width: integratedFooter ? 1 : 0
     opacity: card.controller.previewIndex < 0 || previewed ? 1 : 0.28
 
     MouseArea {
@@ -164,8 +169,8 @@ Rectangle {
                 z: 5
                 radius: previewFrame.radius
                 color: "transparent"
-                border.color: card.outlineColor
-                border.width: card.outlineWidth
+                border.color: Border.color(card.outlineSpec)
+                border.width: 1
             }
 
             Rectangle {
@@ -183,7 +188,7 @@ Rectangle {
 
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: Style.space(40)
+            Layout.preferredHeight: Style.space(32)
             visible: !card.overlayFooter
 
             Loader {
@@ -200,17 +205,17 @@ Rectangle {
         textFormat: Text.PlainText
         color: Color.menu.text
         font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.bodySmall
     }
 
     component FooterTitle: CardText {
         text: card.windowTitle
-        font.bold: card.selected
+        font.bold: card.selected || card.focusedWindow
         elide: Text.ElideRight
     }
 
     component FooterIcon: Image {
-        property int iconSize: 24
+        property int iconSize: 18
         Layout.preferredWidth: Style.space(iconSize)
         Layout.preferredHeight: Style.space(iconSize)
         source: card.iconSource
@@ -218,23 +223,18 @@ Rectangle {
         asynchronous: true
     }
 
-    component WorkspaceColumn: ColumnLayout {
-        spacing: 0
+    component ApplicationLabel: CardText {
+        text: "· " + card.applicationName
+        opacity: 0.48
+        elide: Text.ElideRight
+    }
 
-        CardText {
-            Layout.alignment: Qt.AlignRight
-            text: card.workspaceName
-            color: card.focusedWindow ? Color.accent : Color.menu.text
-            font.pixelSize: Style.font.heading
-            font.bold: true
-        }
-
-        CardText {
-            Layout.alignment: Qt.AlignRight
-            text: "Workspace"
-            opacity: 0.55
-            font.pixelSize: Style.font.caption
-        }
+    component WorkspaceLabel: CardText {
+        text: "[" + card.workspaceName + "]"
+        color: card.focusedWindow ? Color.accent : Color.menu.text
+        opacity: card.focusedWindow ? 1 : 0.56
+        font.pixelSize: Style.font.caption
+        font.bold: card.focusedWindow
     }
 
     // Only the configured footer style is instantiated per card.
@@ -246,48 +246,39 @@ Rectangle {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: Math.min(parent.height * 0.45, Style.space(84))
+                height: Math.min(parent.height, Style.space(32))
+                color: Color.menu.background
 
-                gradient: Gradient {
-                    orientation: Gradient.Vertical
-
-                    GradientStop {
-                        position: 0
-                        color: "transparent"
-                    }
-
-                    GradientStop {
-                        position: 1
-                        color: Qt.rgba(0, 0, 0, 0.94)
-                    }
+                Rectangle {
+                    anchors.fill: parent
+                    visible: card.selected
+                    color: Color.menu.selectedBackground
                 }
-            }
 
-            RowLayout {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.margins: Style.spacing.md
-                spacing: Style.spacing.md
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: Style.spacing.hairline
+                    color: Util.alpha(Color.menu.text, 0.22)
+                }
 
-                FooterIcon { iconSize: 28 }
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: Style.spacing.lg
+                    anchors.rightMargin: Style.spacing.lg
+                    spacing: Style.spacing.md
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
+                    FooterIcon {}
 
                     FooterTitle { Layout.fillWidth: true }
 
-                    CardText {
-                        Layout.fillWidth: true
-                        text: card.applicationName
-                        opacity: 0.68
-                        font.pixelSize: Style.font.caption
-                        elide: Text.ElideRight
+                    ApplicationLabel {
+                        Layout.maximumWidth: parent.width * 0.32
                     }
-                }
 
-                WorkspaceColumn {}
+                    WorkspaceLabel {}
+                }
             }
         }
     }
@@ -298,24 +289,10 @@ Rectangle {
         RowLayout {
             spacing: Style.spacing.md
 
-            FooterIcon { iconSize: 30 }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 0
-
-                FooterTitle { Layout.fillWidth: true }
-
-                CardText {
-                    Layout.fillWidth: true
-                    text: card.applicationName
-                    opacity: 0.62
-                    font.pixelSize: Style.font.caption
-                    elide: Text.ElideRight
-                }
-            }
-
-            WorkspaceColumn {}
+            FooterIcon {}
+            FooterTitle { Layout.fillWidth: true }
+            ApplicationLabel { Layout.maximumWidth: parent.width * 0.3 }
+            WorkspaceLabel {}
         }
     }
 
@@ -329,40 +306,21 @@ Rectangle {
 
             FooterTitle { Layout.fillWidth: true }
 
-            CardText {
-                text: "WS " + card.workspaceName
-                color: card.focusedWindow ? Color.accent : Color.menu.text
-                opacity: card.focusedWindow ? 1 : 0.68
-                font.pixelSize: Style.font.caption
-                font.bold: true
-            }
+            WorkspaceLabel {}
         }
     }
 
     Component {
         id: centeredFooter
 
-        ColumnLayout {
-            spacing: 0
+        RowLayout {
+            spacing: Style.spacing.md
 
-            RowLayout {
-                Layout.alignment: Qt.AlignHCenter
-                spacing: Style.spacing.md
-
-                FooterIcon {}
-
-                FooterTitle { Layout.maximumWidth: Math.max(1, card.width - Style.space(80)) }
-            }
-
-            CardText {
-                Layout.alignment: Qt.AlignHCenter
-                Layout.maximumWidth: Math.max(1, card.width - Style.space(32))
-                text: card.applicationName + "  ·  Workspace " + card.workspaceName
-                color: card.focusedWindow ? Color.accent : Color.menu.text
-                opacity: card.focusedWindow ? 1 : 0.62
-                font.pixelSize: Style.font.caption
-                elide: Text.ElideRight
-            }
+            Item { Layout.fillWidth: true }
+            FooterIcon {}
+            FooterTitle { Layout.maximumWidth: Math.max(1, card.width * 0.54) }
+            WorkspaceLabel {}
+            Item { Layout.fillWidth: true }
         }
     }
 

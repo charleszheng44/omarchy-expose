@@ -27,15 +27,15 @@ Item {
     readonly property string previewPlacement: root.pluginEntry && root.pluginEntry.previewPlacement === "centered" ? "centered" : "in-place"
     readonly property var windowFooterStyles: ["floating", "integrated", "overlay", "centered"]
     readonly property string windowFooterStyle: {
-        var style = String((root.pluginEntry && root.pluginEntry.windowFooterStyle) || "floating");
-        return root.windowFooterStyles.indexOf(style) !== -1 ? style : "floating";
+        var style = String((root.pluginEntry && root.pluginEntry.windowFooterStyle) || "overlay");
+        return root.windowFooterStyles.indexOf(style) !== -1 ? style : "overlay";
     }
     readonly property var animationStyles: ["original", "fade", "zoom", "slide"]
     readonly property string animationStyle: {
-        var style = String((root.pluginEntry && root.pluginEntry.animationStyle) || "original");
-        return root.animationStyles.indexOf(style) !== -1 ? style : "original";
+        var style = String((root.pluginEntry && root.pluginEntry.animationStyle) || "fade");
+        return root.animationStyles.indexOf(style) !== -1 ? style : "fade";
     }
-    readonly property var defaultAnimationDurations: ({ original: 190, fade: 400, zoom: 320, slide: 320 })
+    readonly property var defaultAnimationDurations: ({ original: 190, fade: 140, zoom: 240, slide: 240 })
     readonly property var animationTimings: {
         var configuredTimings = root.pluginEntry && root.pluginEntry.animationTimings
             && typeof root.pluginEntry.animationTimings === "object"
@@ -101,16 +101,16 @@ Item {
     readonly property real slideOffsetFraction: root.animationStyle === "slide"
         ? 0.11 * (1 - root.motionProgress)
         : 0
-    readonly property real windowFooterHeight: root.windowFooterStyle === "overlay" ? 0 : Style.space(40)
+    readonly property real windowFooterHeight: root.windowFooterStyle === "overlay" ? 0 : Style.space(32)
     readonly property int backgroundBlur: {
         var raw = root.pluginEntry ? root.pluginEntry.backgroundBlur : undefined;
         var value = raw === null || raw === undefined ? NaN : Number(raw);
-        return isFinite(value) ? Math.max(0, Math.min(20, Math.round(value))) : 4;
+        return isFinite(value) ? Math.max(0, Math.min(20, Math.round(value))) : 0;
     }
     readonly property int backgroundDim: {
         var raw = root.pluginEntry ? root.pluginEntry.backgroundDim : undefined;
         var value = raw === null || raw === undefined ? NaN : Number(raw);
-        return isFinite(value) ? Math.max(0, Math.min(90, Math.round(value))) : 6;
+        return isFinite(value) ? Math.max(0, Math.min(90, Math.round(value))) : 0;
     }
     readonly property bool hotCornerEnabled: !root.pluginEntry || root.pluginEntry.hotCornerEnabled !== false
     readonly property var hotCornerPositions: ["top-left", "top-right", "bottom-left", "bottom-right"]
@@ -1832,6 +1832,11 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
+                color: Color.menu.scrim
+            }
+
+            Rectangle {
+                anchors.fill: parent
                 color: "black"
                 opacity: root.effectiveBackgroundDim / 100
             }
@@ -1881,85 +1886,86 @@ Item {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: Style.spacing.sm
-                    spacing: Style.spacing.md
+                    anchors.margins: Style.spacing.panelPadding
+                    spacing: Style.spacing.panelGap
 
                     Rectangle {
                         id: searchBar
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: Math.min(Style.space(760), overviewWindow.width - Style.space(48))
-                        Layout.preferredHeight: Style.space(48)
+                        Layout.preferredWidth: Math.min(Style.space(640), overviewWindow.width - Style.space(48))
+                        Layout.preferredHeight: Style.space(42)
                         radius: Style.cornerRadius
                         color: Color.menu.background
-                        border.color: root.filterText ? Color.menu.selectedText : Color.menu.border
-                        border.width: Math.max(1, Style.normalBorderWidth)
+                        border.color: root.filterText
+                            ? Border.color(Border.hyprlandActiveSpec(Color.accent, 1))
+                            : Color.menu.border
+                        border.width: 1
 
                         RowLayout {
                             anchors.fill: parent
-                            anchors.leftMargin: Style.spacing.xl
-                            anchors.rightMargin: Style.spacing.xl
-                            spacing: Style.spacing.md
+                            anchors.leftMargin: Style.spacing.panelPadding
+                            anchors.rightMargin: Style.spacing.panelPadding
+                            spacing: Style.spacing.lg
                             Text {
-                                text: "⌕"
+                                text: "WINDOWS"
                                 textFormat: Text.PlainText
-                                color: Color.menu.text
+                                color: Color.accent
                                 font.family: Style.font.menuFamily
-                                font.pixelSize: Style.font.heading
+                                font.pixelSize: Style.font.caption
+                                font.bold: true
+                                font.letterSpacing: Style.space(1)
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: Style.spacing.hairline
+                                Layout.preferredHeight: Style.space(18)
+                                color: Util.alpha(Color.menu.text, 0.18)
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: root.filterText || "Type to filter windows…"
+                                text: root.filterText || "Search open windows…"
                                 textFormat: Text.PlainText
                                 color: Color.menu.text
-                                opacity: root.filterText ? 1 : 0.6
+                                opacity: root.filterText ? 1 : 0.58
                                 font.family: Style.font.menuFamily
-                                font.pixelSize: Style.font.heading
+                                font.pixelSize: Style.font.body
                                 elide: Text.ElideRight
                             }
                             Text {
-                                text: overviewWindow.screenToplevels.length + " windows"
+                                text: overviewWindow.screenToplevels.length
                                 textFormat: Text.PlainText
                                 color: Color.menu.text
-                                opacity: 0.55
+                                opacity: 0.48
                                 font.family: Style.font.menuFamily
                                 font.pixelSize: Style.font.bodySmall
                             }
 
                             Rectangle {
-                                Layout.preferredWidth: Math.max(1, Style.normalBorderWidth)
-                                Layout.preferredHeight: Style.space(24)
-                                color: Color.menu.border
+                                Layout.preferredWidth: Style.spacing.hairline
+                                Layout.preferredHeight: Style.space(18)
+                                color: Util.alpha(Color.menu.text, 0.18)
                             }
 
                             Text {
-                                Layout.maximumWidth: Style.space(176)
+                                Layout.maximumWidth: Style.space(150)
                                 text: searchBar.width < Style.space(640)
                                     ? (root.workspaceScope === "all" ? "All" : "WS " + overviewWindow.screenWorkspaceLabel)
                                     : overviewWindow.screenScopeLabel
                                 textFormat: Text.PlainText
-                                color: Color.accent
+                                color: Color.menu.text
+                                opacity: 0.62
                                 font.family: Style.font.menuFamily
                                 font.pixelSize: Style.font.bodySmall
-                                font.bold: true
                                 elide: Text.ElideRight
                             }
 
-                            Rectangle {
-                                Layout.preferredWidth: Style.space(34)
-                                Layout.preferredHeight: Style.space(24)
-                                radius: Math.max(2, Style.cornerRadius - Style.spacing.sm)
-                                color: "transparent"
-                                border.color: Color.menu.border
-                                border.width: Math.max(1, Style.normalBorderWidth)
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "Tab"
-                                    textFormat: Text.PlainText
-                                    color: Color.menu.text
-                                    font.family: Style.font.menuFamily
-                                    font.pixelSize: Style.font.caption
-                                }
+                            Text {
+                                text: "TAB"
+                                textFormat: Text.PlainText
+                                color: Color.menu.text
+                                opacity: 0.38
+                                font.family: Style.font.menuFamily
+                                font.pixelSize: Style.font.caption
                             }
                         }
                     }
@@ -1973,7 +1979,7 @@ Item {
                             var screenRatio = overviewWindow.screen && overviewWindow.screen.height > 0
                                 ? overviewWindow.screen.width / overviewWindow.screen.height
                                 : 0;
-                            return root.computeWindowLayout(overviewWindow.screenToplevels, width, height, Style.space(64), Style.spacing.sm, root.windowFooterHeight, screenRatio);
+                            return root.computeWindowLayout(overviewWindow.screenToplevels, width, height, Style.spacing.panelGap * 2, Style.spacing.sm, root.windowFooterHeight, screenRatio);
                         }
 
                         Item {
@@ -2018,38 +2024,58 @@ Item {
                         }
                     }
 
-                    RowLayout {
+                    Rectangle {
                         Layout.alignment: Qt.AlignHCenter
-                        spacing: Style.spacing.xl
+                        Layout.preferredWidth: Math.min(Style.space(680), overviewWindow.width - Style.space(48))
+                        Layout.preferredHeight: Style.space(32)
                         visible: root.showFooter
+                        radius: Style.cornerRadius
+                        color: Color.menu.background
+                        border.color: Color.menu.border
+                        border.width: 1
 
-                        Text {
-                            text: "← ↑ ↓ → navigate   Space preview   Tab scope   Shift+Q close   Enter open   Esc close"
-                            textFormat: Text.PlainText
-                            color: Color.menu.text
-                            opacity: 0.55
-                            font.family: Style.font.menuFamily
-                            font.pixelSize: Style.font.bodySmall
-                        }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: Style.spacing.panelPadding
+                            anchors.rightMargin: Style.spacing.panelPadding
+                            spacing: Style.spacing.lg
 
-                        Text {
-                            id: settingsControl
-                            property bool hovered: false
-                            text: "Settings"
-                            textFormat: Text.PlainText
-                            color: settingsControl.hovered ? Color.menu.selectedText : Color.menu.text
-                            opacity: settingsControl.hovered ? 1 : 0.7
-                            font.family: Style.font.menuFamily
-                            font.pixelSize: Style.font.bodySmall
-                            font.bold: true
+                            Text {
+                                Layout.fillWidth: true
+                                text: "ARROWS  navigate    ENTER  open    SPACE  preview    SHIFT Q  close"
+                                textFormat: Text.PlainText
+                                color: Color.menu.text
+                                opacity: 0.48
+                                font.family: Style.font.menuFamily
+                                font.pixelSize: Style.font.caption
+                                elide: Text.ElideRight
+                            }
 
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onEntered: settingsControl.hovered = true
-                                onExited: settingsControl.hovered = false
-                                onClicked: root.openSettings()
+                            Rectangle {
+                                Layout.preferredWidth: Style.spacing.hairline
+                                Layout.preferredHeight: Style.space(16)
+                                color: Util.alpha(Color.menu.text, 0.18)
+                            }
+
+                            Text {
+                                id: settingsControl
+                                property bool hovered: false
+                                text: "SETTINGS"
+                                textFormat: Text.PlainText
+                                color: settingsControl.hovered ? Color.menu.selectedText : Color.menu.text
+                                opacity: settingsControl.hovered ? 1 : 0.55
+                                font.family: Style.font.menuFamily
+                                font.pixelSize: Style.font.caption
+                                font.bold: true
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onEntered: settingsControl.hovered = true
+                                    onExited: settingsControl.hovered = false
+                                    onClicked: root.openSettings()
+                                }
                             }
                         }
                     }

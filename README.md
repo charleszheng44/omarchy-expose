@@ -11,7 +11,7 @@ macOS-style Exposé for Omarchy: one key or a hot corner shows every open window
 - **Search.** Just start typing to filter windows by title or application.
 - **Workspace scope.** Press Tab to switch between every window and windows on the current workspace. Per-monitor mode evaluates the current workspace of the selected display.
 - **Multi-monitor layouts.** The overview opens only on the focused display (or the display whose hot corner was used). Same overview shows every window there; per monitor keeps that display's own windows.
-- **Built for Omarchy.** Runs inside Omarchy Shell, follows the active theme, and adds no packages, services, or daemons.
+- **Built for Omarchy.** Uses Omarchy's native scrim, typography, spacing, colors, corners, and one-pixel border language. It adds no packages, services, or daemons.
 - **Hot corner.** Toggle the overview by flinging the pointer into a corner (on by default, any corner, can be disabled).
 
 Everything is tunable from the built-in Settings panel and over IPC, and changes apply instantly.
@@ -26,7 +26,7 @@ The underlying Quickshell, Hyprland, Bash, and coreutils support ships with Omar
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/kristofferR/omarchy-expose.git --enable
+omarchy plugin add https://github.com/charleszheng44/omarchy-expose.git --enable
 ```
 
 That's it: the top-left hot corner works right away. Optionally, bind a key in `~/.config/hypr/bindings.lua`, then run `hyprctl reload`:
@@ -89,12 +89,12 @@ The overlay is created on one display only. With **Same overview**, that display
 
 Open **Settings** from the footer while the overview is open. It is fully keyboard driven: 1-4 jump to a section, Up/Down move between controls, Left/Right adjust sliders and choices, Space or Enter flip toggles and press buttons, Escape closes. Changes apply immediately:
 
-- Opening animation: Original (default), Fade, Zoom, or Slide
+- Opening animation: Original, Fade (default), Zoom, or Slide
 - Animation speed saved per mode, linked for in/out by default or expandable to separate timings
 - Slide direction: left (default), right, up, or down. Splitting in/out splits both speed and direction
-- Background blur (0–20) and dim (0–90)
+- Background blur (0–20) and extra dim above the theme scrim (0–90)
 - Preview placement: in-place or centered
-- Window footer style: floating, integrated, overlay, or centered
+- Window footer style: floating, integrated, overlay (default), or centered
 - Multiple displays: Same overview (all windows together on the selected display) or Per monitor (only that display's windows)
 - Bottom text visibility. Hiding it requires confirmation and removes the Settings link
 - Hot corner on/off and position (disable the same corner in other hot-corner plugins to avoid overlap)
@@ -105,17 +105,17 @@ Every reversible setting is also scriptable:
 ```sh
 omarchy-shell expose toggle                      # also: open, close
 omarchy-shell expose settings toggle             # also: open, close
-omarchy-shell expose animationStyle original     # original | fade | zoom | slide
+omarchy-shell expose animationStyle fade         # original | fade | zoom | slide
 omarchy-shell expose animationDuration original 190    # linked in/out, 100-800 ms
 omarchy-shell expose animationDurationIn original 190  # separate opening speed
 omarchy-shell expose animationDurationOut original 190 # separate closing speed
 omarchy-shell expose slideDirection left         # left | right | up | down, both halves
 omarchy-shell expose slideDirectionIn left       # separate opening side, also splits slide timing
 omarchy-shell expose slideDirectionOut right     # separate closing side, also splits slide timing
-omarchy-shell expose backgroundBlur 4            # 0-20
-omarchy-shell expose backgroundDim 6             # 0-90
+omarchy-shell expose backgroundBlur 0            # 0-20
+omarchy-shell expose backgroundDim 0             # extra dim above theme scrim, 0-90
 omarchy-shell expose previewPlacement in-place   # in-place | centered
-omarchy-shell expose windowFooterStyle floating  # floating | integrated | overlay | centered
+omarchy-shell expose windowFooterStyle overlay   # floating | integrated | overlay | centered
 omarchy-shell expose multiMonitorMode mirrored   # mirrored | per-monitor
 omarchy-shell expose hotCorner on                # on | off
 omarchy-shell expose hotCornerPosition top-left  # top-left | top-right | bottom-left | bottom-right

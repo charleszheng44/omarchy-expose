@@ -847,7 +847,7 @@ Item {
                                 Layout.preferredHeight: Style.space(48)
                                 Text {
                                     Layout.preferredWidth: Style.space(120)
-                                    text: "Dim"
+                                    text: "Extra dim"
                                     textFormat: Text.PlainText
                                     color: Color.menu.text
                                     font.family: Style.font.menuFamily
