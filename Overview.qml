@@ -391,13 +391,24 @@ Item {
             return;
         previewWarmupBackdropTimeout.stop();
         root.previewWarmupBackdropReady = true;
-        // Give the frozen cover a complete render frame before warm-previews
-        // moves Hyprland's scrolling viewport behind it.
+        // Reveal the overview on top of the current desktop immediately. The
+        // frozen frame stays behind the cards only while warm-previews moves
+        // Hyprland's scrolling viewport out of sight.
+        root.finishOpenSurface();
         previewWarmupLaunchDelay.restart();
     }
 
+    function skipPreviewWarmup() {
+        if (!root.previewWarmupActive)
+            return;
+        root.previewWarmupActive = false;
+        root.previewWarmupBackdropReady = false;
+        root.previewWarmupCommand = [];
+        root.finishOpenSurface();
+    }
+
     function launchPreviewWarmup() {
-        if (!root.previewWarmupActive || !root.openingPending || previewWarmupProcess.running)
+        if (!root.previewWarmupActive || !root.opened || previewWarmupProcess.running)
             return;
         previewWarmupProcess.command = root.previewWarmupCommand;
         previewWarmupProcess.running = true;
@@ -406,11 +417,15 @@ Item {
     function cancelPreviewWarmup() {
         previewWarmupBackdropTimeout.stop();
         previewWarmupLaunchDelay.stop();
+        // If focus cycling already started, keep the frozen backdrop until the
+        // helper's EXIT trap restores the original window.
+        if (previewWarmupProcess.running) {
+            previewWarmupProcess.signal(15);
+            return;
+        }
         root.previewWarmupActive = false;
         root.previewWarmupBackdropReady = false;
         root.previewWarmupCommand = [];
-        if (previewWarmupProcess.running)
-            previewWarmupProcess.signal(15);
     }
 
     function finishOpenSurface() {
@@ -1339,14 +1354,13 @@ Item {
             root.previewWarmupActive = false;
             root.previewWarmupBackdropReady = false;
             root.previewWarmupCommand = [];
-            root.finishOpenSurface();
         }
     }
 
     Timer {
         id: previewWarmupBackdropTimeout
-        interval: 250
-        onTriggered: root.showPreviewWarmupBackdrop()
+        interval: 80
+        onTriggered: root.skipPreviewWarmup()
     }
 
     Timer {
@@ -1698,9 +1712,7 @@ Item {
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "expose-window-overview"
             WlrLayershell.layer: WlrLayer.Overlay
-            HyprlandWindow.opacity: root.previewWarmupActive && root.previewWarmupBackdropReady
-                ? 1
-                : root.motionProgress
+            HyprlandWindow.opacity: root.motionProgress
             BackgroundEffect.blurRegion: root.effectiveBackgroundBlur > 0 // qmllint disable missing-type
                     && !root.backgroundBlurFailed
                 ? backgroundBlurRegion
@@ -1729,6 +1741,8 @@ Item {
                 return root.toplevelsOnScreen(String(modelData.name || ""));
             }
             property var cardToplevels: []
+            property var warmupBackdropFrame: null
+            property bool warmupBackdropGrabPending: false
 
             function syncCardToplevels() {
                 if (!root.toplevelListsEqual(overviewWindow.cardToplevels, overviewWindow.cardToplevelsSource))
@@ -1736,8 +1750,32 @@ Item {
             }
 
             function captureWarmupBackdrop() {
-                if (warmupBackdrop.hasContent) {
+                overviewWindow.warmupBackdropFrame = null;
+                overviewWindow.warmupBackdropGrabPending = false;
+                if (warmupBackdrop.hasContent)
+                    overviewWindow.cacheWarmupBackdrop();
+            }
+
+            function cacheWarmupBackdrop() {
+                if (!root.previewWarmupActive || overviewWindow.warmupBackdropGrabPending)
+                    return;
+                overviewWindow.warmupBackdropGrabPending = true;
+                warmupBackdrop.grabToImage(function(result) {
+                    overviewWindow.warmupBackdropGrabPending = false;
+                    if (!root.previewWarmupActive || !result)
+                        return;
+                    overviewWindow.warmupBackdropFrame = result;
                     root.showPreviewWarmupBackdrop();
+                });
+            }
+
+            Connections {
+                target: root
+                function onPreviewWarmupActiveChanged() {
+                    if (!root.previewWarmupActive) {
+                        overviewWindow.warmupBackdropFrame = null;
+                        overviewWindow.warmupBackdropGrabPending = false;
+                    }
                 }
             }
 
@@ -1780,6 +1818,34 @@ Item {
                 item: overviewWindow.contentItem
             }
 
+            // Take one frame while the layer surface is still transparent.
+            // Once cached, it sits behind the overview—not in front of it—so
+            // opening remains immediate while focus warm-up stays invisible.
+            ScreencopyView {
+                id: warmupBackdrop
+                anchors.fill: parent
+                visible: root.previewWarmupActive && !root.previewWarmupBackdropReady
+                captureSource: overviewWindow.modelData
+                live: visible
+                paintCursor: false
+                onHasContentChanged: {
+                    if (hasContent && root.previewWarmupActive)
+                        Qt.callLater(overviewWindow.cacheWarmupBackdrop);
+                }
+            }
+
+            Image {
+                anchors.fill: parent
+                visible: root.previewWarmupActive
+                    && root.previewWarmupBackdropReady
+                    && overviewWindow.warmupBackdropFrame !== null
+                source: overviewWindow.warmupBackdropFrame
+                    ? overviewWindow.warmupBackdropFrame.url
+                    : ""
+                fillMode: Image.Stretch
+                cache: false
+            }
+
             Rectangle {
                 anchors.fill: parent
                 color: Color.menu.scrim
@@ -1789,48 +1855,6 @@ Item {
                 anchors.fill: parent
                 color: "black"
                 opacity: root.effectiveBackgroundDim / 100
-            }
-
-            // Off-screen windows must briefly receive focus so Wayland will
-            // export a current frame. Keep the desktop completely still while
-            // that happens: capture it before the first focus move, cover the
-            // overview with that frame, then reveal the populated grid.
-            Item {
-                anchors.fill: parent
-                z: 1000
-                visible: root.previewWarmupActive
-                enabled: false
-
-                Rectangle {
-                    anchors.fill: parent
-                    color: Color.background
-                }
-
-                ScreencopyView {
-                    id: warmupBackdrop
-                    anchors.fill: parent
-                    captureSource: overviewWindow.modelData
-                    // Starting live here lets screencopy wait for its Wayland
-                    // context instead of racing captureFrame() during surface
-                    // construction. It stops after the first complete frame.
-                    live: root.previewWarmupActive && !root.previewWarmupBackdropReady
-                    paintCursor: false
-                    onHasContentChanged: {
-                        if (hasContent && root.previewWarmupActive)
-                            root.showPreviewWarmupBackdrop();
-                    }
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    color: Color.menu.scrim
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    color: "black"
-                    opacity: root.effectiveBackgroundDim / 100
-                }
             }
 
             Item {
