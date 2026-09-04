@@ -6,7 +6,7 @@ macOS-style Exposé for Omarchy: one key or a hot corner shows every open window
 
 ## Highlights
 
-- **Live previews.** Visible windows use live screencopy views, so videos keep playing and terminals keep scrolling. Exposé appears immediately over the current desktop; while off-screen scrolling columns receive a fresh frame, a fast raw desktop capture keeps that background visually still behind the already-visible grid.
+- **Live previews, static desktop.** Window cards remain live, so videos keep playing and terminals keep scrolling. Exposé appears over a captured frame of the current desktop and keeps that background still until it closes; off-screen scrolling columns receive a fresh card frame without moving the backdrop.
 - **Quick Look.** Space enlarges any preview and restores it again. Shift+Space does it in slow motion, like the classic macOS Easter egg.
 - **Search.** Just start typing to filter windows by title or application.
 - **Workspace scope.** Press Tab to switch between every window and windows on the current workspace. Per-monitor mode evaluates the current workspace of the selected display.

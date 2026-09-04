@@ -142,13 +142,16 @@ Item {
     property bool previewNavigationSlowMotion: false
     property bool openingPending: false
     property bool previewWarmupActive: false
+    property bool previewWarmupBackdropAvailable: false
     property bool previewWarmupBackdropReady: false
     property var previewWarmupCommand: []
     property int previewWarmupBackdropRevision: 0
-    readonly property string previewWarmupBackdropPath: {
+    readonly property string previewWarmupRuntimeDir: {
         var runtimeDir = String(Quickshell.env("XDG_RUNTIME_DIR") || "");
-        return (runtimeDir || root.pluginDir) + "/expose-window-overview-backdrop.ppm";
+        return runtimeDir || root.pluginDir;
     }
+    property string previewWarmupBackdropPath: ""
+    property string previewWarmupBackdropCleanupPath: ""
     property bool settingsOpen: false
     property int settingsCategoryIndex: 0
     property bool footerHideConfirmationOpen: false
@@ -363,24 +366,22 @@ Item {
             if (WindowModel.needsPreviewWarmup(top))
                 hidden.push(top);
         }
-        if (!hidden.length) {
-            root.finishOpenSurface();
-            return;
-        }
-        var command = [root.pluginDir + "/warm-previews"];
+        var command = [];
         for (var hiddenIndex = 0; hiddenIndex < hidden.length; hiddenIndex++) {
             var address = WindowModel.addressFor(hidden[hiddenIndex]);
             if (address)
                 command.push(address);
         }
-        if (command.length <= 1) {
-            root.finishOpenSurface();
-            return;
-        }
+        if (command.length)
+            command.unshift(root.pluginDir + "/warm-previews");
         root.previewWarmupActive = true;
+        root.previewWarmupBackdropAvailable = false;
         root.previewWarmupBackdropReady = false;
         root.previewWarmupCommand = command;
-        previewWarmupBackdropCleanup.stop();
+        root.previewWarmupBackdropRevision++;
+        root.previewWarmupBackdropPath = root.previewWarmupRuntimeDir
+            + "/expose-window-overview-backdrop-"
+            + Date.now() + "-" + root.previewWarmupBackdropRevision + ".ppm";
         previewWarmupBackdropTimeout.restart();
         previewWarmupBackdropProcess.command = [
             "grim",
@@ -396,11 +397,13 @@ Item {
             return;
         previewWarmupBackdropTimeout.stop();
         root.previewWarmupBackdropReady = true;
-        // Reveal the overview on top of the current desktop immediately. The
-        // frozen frame stays behind the cards only while warm-previews moves
-        // Hyprland's scrolling viewport out of sight.
+        // Reveal the overview on top of this opening frame and retain it until
+        // the surface unmounts. Only the cards remain live while Expose is open.
         root.finishOpenSurface();
-        previewWarmupLaunchDelay.restart();
+        if (root.previewWarmupCommand.length > 1)
+            previewWarmupLaunchDelay.restart();
+        else
+            root.finishPreviewWarmup();
     }
 
     function skipPreviewWarmup() {
@@ -409,20 +412,34 @@ Item {
         if (previewWarmupBackdropProcess.running)
             previewWarmupBackdropProcess.signal(15);
         root.previewWarmupActive = false;
+        root.previewWarmupBackdropAvailable = false;
         root.previewWarmupBackdropReady = false;
         root.previewWarmupCommand = [];
         root.finishOpenSurface();
     }
 
     function cleanupPreviewWarmupBackdrop() {
-        Quickshell.execDetached(["rm", "-f", "--", root.previewWarmupBackdropPath]);
+        var path = root.previewWarmupBackdropCleanupPath;
+        root.previewWarmupBackdropCleanupPath = "";
+        if (path)
+            Quickshell.execDetached(["rm", "-f", "--", path]);
     }
 
     function launchPreviewWarmup() {
         if (!root.previewWarmupActive || !root.opened || previewWarmupProcess.running)
             return;
+        if (root.previewWarmupCommand.length <= 1) {
+            root.finishPreviewWarmup();
+            return;
+        }
         previewWarmupProcess.command = root.previewWarmupCommand;
         previewWarmupProcess.running = true;
+    }
+
+    function finishPreviewWarmup() {
+        root.previewWarmupActive = false;
+        root.previewWarmupCommand = [];
+        Qt.callLater(root.focusKeyboardWindow);
     }
 
     function cancelPreviewWarmup() {
@@ -437,7 +454,6 @@ Item {
             return;
         }
         root.previewWarmupActive = false;
-        root.previewWarmupBackdropReady = false;
         root.previewWarmupCommand = [];
     }
 
@@ -502,6 +518,10 @@ Item {
 
     function releaseBlurredSurface() {
         root.surfaceMounted = false;
+        root.previewWarmupBackdropAvailable = false;
+        root.previewWarmupBackdropReady = false;
+        root.previewWarmupBackdropCleanupPath = root.previewWarmupBackdropPath;
+        root.previewWarmupBackdropPath = "";
         root.backgroundBlurPrimed = false;
         root.clearOverviewScreen();
         root.backgroundBlurReleasePhase = 0;
@@ -1367,9 +1387,7 @@ Item {
         onExited: function (exitCode, exitStatus) { // qmllint disable signal-handler-parameters
             if (!root.previewWarmupActive)
                 return;
-            root.previewWarmupActive = false;
-            root.previewWarmupBackdropReady = false;
-            root.previewWarmupCommand = [];
+            root.finishPreviewWarmup();
         }
     }
 
@@ -1383,7 +1401,7 @@ Item {
                 root.skipPreviewWarmup();
                 return;
             }
-            root.previewWarmupBackdropRevision++;
+            root.previewWarmupBackdropAvailable = true;
         }
     }
 
@@ -1833,12 +1851,10 @@ Item {
             // briefly receive focus, then removed when the overview closes.
             Image {
                 anchors.fill: parent
-                visible: root.previewWarmupActive
-                    && root.previewWarmupBackdropReady
-                source: root.previewWarmupActive
-                        && root.previewWarmupBackdropRevision > 0
+                visible: root.surfaceMounted && root.previewWarmupBackdropReady
+                source: root.previewWarmupBackdropAvailable
+                        && root.previewWarmupBackdropPath
                     ? "file://" + root.previewWarmupBackdropPath
-                        + "?revision=" + root.previewWarmupBackdropRevision
                     : ""
                 fillMode: Image.Stretch
                 cache: false
