@@ -6,7 +6,7 @@ macOS-style Exposé for Omarchy: one key or a hot corner shows every open window
 
 ## Highlights
 
-- **Live previews.** Visible windows use live screencopy views, so videos keep playing and terminals keep scrolling. Exposé appears immediately over the current desktop; while off-screen scrolling columns receive a fresh frame, that desktop stays visually still behind the already-visible grid.
+- **Live previews.** Visible windows use live screencopy views, so videos keep playing and terminals keep scrolling. Exposé appears immediately over the current desktop; while off-screen scrolling columns receive a fresh frame, a fast raw desktop capture keeps that background visually still behind the already-visible grid.
 - **Quick Look.** Space enlarges any preview and restores it again. Shift+Space does it in slow motion, like the classic macOS Easter egg.
 - **Search.** Just start typing to filter windows by title or application.
 - **Workspace scope.** Press Tab to switch between every window and windows on the current workspace. Per-monitor mode evaluates the current workspace of the selected display.
@@ -131,7 +131,7 @@ Exposé runs unsandboxed inside Omarchy Shell with your user's permissions.
 - Its helpers are plain Bash calling `hyprctl`, `jq`, `sleep`, and `timeout`.
 - It reads window, workspace, and monitor state from Quickshell's native Hyprland model, activates or closes the windows you select, and temporarily raises Hyprland's blur while open, restoring the previous value on close.
 - Settings writes touch only the plugin's entry in `~/.config/omarchy/shell.json`.
-- No network, no privilege escalation, no package installs, no services.
+- No network, no privilege escalation, no package installs, no services. One raw desktop frame is kept in `$XDG_RUNTIME_DIR` while Exposé is open and deleted when it closes.
 
 ## Troubleshooting
 

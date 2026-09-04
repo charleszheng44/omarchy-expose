@@ -144,6 +144,11 @@ Item {
     property bool previewWarmupActive: false
     property bool previewWarmupBackdropReady: false
     property var previewWarmupCommand: []
+    property int previewWarmupBackdropRevision: 0
+    readonly property string previewWarmupBackdropPath: {
+        var runtimeDir = String(Quickshell.env("XDG_RUNTIME_DIR") || "");
+        return (runtimeDir || root.pluginDir) + "/expose-window-overview-backdrop.ppm";
+    }
     property bool settingsOpen: false
     property int settingsCategoryIndex: 0
     property bool footerHideConfirmationOpen: false
@@ -375,15 +380,15 @@ Item {
         root.previewWarmupActive = true;
         root.previewWarmupBackdropReady = false;
         root.previewWarmupCommand = command;
+        previewWarmupBackdropCleanup.stop();
         previewWarmupBackdropTimeout.restart();
-        for (var surfaceIndex = 0; surfaceIndex < surfaceInstances.instances.length; surfaceIndex++) {
-            var surface = surfaceInstances.instances[surfaceIndex];
-            if (surface && surface.acceptsKeyboard) {
-                surface.captureWarmupBackdrop();
-                return;
-            }
-        }
-        root.showPreviewWarmupBackdrop();
+        previewWarmupBackdropProcess.command = [
+            "grim",
+            "-t", "ppm",
+            "-o", root.keyboardScreenName,
+            root.previewWarmupBackdropPath
+        ];
+        previewWarmupBackdropProcess.running = true;
     }
 
     function showPreviewWarmupBackdrop() {
@@ -401,10 +406,16 @@ Item {
     function skipPreviewWarmup() {
         if (!root.previewWarmupActive)
             return;
+        if (previewWarmupBackdropProcess.running)
+            previewWarmupBackdropProcess.signal(15);
         root.previewWarmupActive = false;
         root.previewWarmupBackdropReady = false;
         root.previewWarmupCommand = [];
         root.finishOpenSurface();
+    }
+
+    function cleanupPreviewWarmupBackdrop() {
+        Quickshell.execDetached(["rm", "-f", "--", root.previewWarmupBackdropPath]);
     }
 
     function launchPreviewWarmup() {
@@ -417,6 +428,8 @@ Item {
     function cancelPreviewWarmup() {
         previewWarmupBackdropTimeout.stop();
         previewWarmupLaunchDelay.stop();
+        if (previewWarmupBackdropProcess.running)
+            previewWarmupBackdropProcess.signal(15);
         // If focus cycling already started, keep the frozen backdrop until the
         // helper's EXIT trap restores the original window.
         if (previewWarmupProcess.running) {
@@ -492,6 +505,9 @@ Item {
         root.backgroundBlurPrimed = false;
         root.clearOverviewScreen();
         root.backgroundBlurReleasePhase = 0;
+        // The image item is gone now, so the raw backdrop can be removed
+        // without QML attempting to reload a file that vanished underneath it.
+        previewWarmupBackdropCleanup.restart();
         root.finishDismiss();
     }
 
@@ -1357,10 +1373,30 @@ Item {
         }
     }
 
+    Process {
+        id: previewWarmupBackdropProcess
+        onExited: function (exitCode, exitStatus) { // qmllint disable signal-handler-parameters
+            if (!root.previewWarmupActive) {
+                return;
+            }
+            if (exitCode !== 0) {
+                root.skipPreviewWarmup();
+                return;
+            }
+            root.previewWarmupBackdropRevision++;
+        }
+    }
+
     Timer {
         id: previewWarmupBackdropTimeout
-        interval: 80
+        interval: 150
         onTriggered: root.skipPreviewWarmup()
+    }
+
+    Timer {
+        id: previewWarmupBackdropCleanup
+        interval: 100
+        onTriggered: root.cleanupPreviewWarmupBackdrop()
     }
 
     Timer {
@@ -1724,7 +1760,13 @@ Item {
                     return String(modelData.name || "") === wanted;
                 return true;
             }
-            WlrLayershell.keyboardFocus: root.opened && acceptsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+            // Leave application focus available only for the short warm-up;
+            // the frozen backdrop hides those focus moves from the user.
+            WlrLayershell.keyboardFocus: root.opened
+                    && !root.previewWarmupActive
+                    && acceptsKeyboard
+                ? WlrKeyboardFocus.Exclusive
+                : WlrKeyboardFocus.None
 
             property alias keyboardItem: keyCatcher
             readonly property var screenToplevels: {
@@ -1741,42 +1783,10 @@ Item {
                 return root.toplevelsOnScreen(String(modelData.name || ""));
             }
             property var cardToplevels: []
-            property var warmupBackdropFrame: null
-            property bool warmupBackdropGrabPending: false
 
             function syncCardToplevels() {
                 if (!root.toplevelListsEqual(overviewWindow.cardToplevels, overviewWindow.cardToplevelsSource))
                     overviewWindow.cardToplevels = overviewWindow.cardToplevelsSource;
-            }
-
-            function captureWarmupBackdrop() {
-                overviewWindow.warmupBackdropFrame = null;
-                overviewWindow.warmupBackdropGrabPending = false;
-                if (warmupBackdrop.hasContent)
-                    overviewWindow.cacheWarmupBackdrop();
-            }
-
-            function cacheWarmupBackdrop() {
-                if (!root.previewWarmupActive || overviewWindow.warmupBackdropGrabPending)
-                    return;
-                overviewWindow.warmupBackdropGrabPending = true;
-                warmupBackdrop.grabToImage(function(result) {
-                    overviewWindow.warmupBackdropGrabPending = false;
-                    if (!root.previewWarmupActive || !result)
-                        return;
-                    overviewWindow.warmupBackdropFrame = result;
-                    root.showPreviewWarmupBackdrop();
-                });
-            }
-
-            Connections {
-                target: root
-                function onPreviewWarmupActiveChanged() {
-                    if (!root.previewWarmupActive) {
-                        overviewWindow.warmupBackdropFrame = null;
-                        overviewWindow.warmupBackdropGrabPending = false;
-                    }
-                }
             }
 
             onCardToplevelsSourceChanged: overviewWindow.syncCardToplevels()
@@ -1818,32 +1828,26 @@ Item {
                 item: overviewWindow.contentItem
             }
 
-            // Take one frame while the layer surface is still transparent.
-            // Once cached, it sits behind the overview—not in front of it—so
-            // opening remains immediate while focus warm-up stays invisible.
-            ScreencopyView {
-                id: warmupBackdrop
-                anchors.fill: parent
-                visible: root.previewWarmupActive && !root.previewWarmupBackdropReady
-                captureSource: overviewWindow.modelData
-                live: visible
-                paintCursor: false
-                onHasContentChanged: {
-                    if (hasContent && root.previewWarmupActive)
-                        Qt.callLater(overviewWindow.cacheWarmupBackdrop);
-                }
-            }
-
+            // grim's raw PPM capture takes one compositor frame and avoids PNG
+            // encoding delay. It is shown behind the cards while hidden windows
+            // briefly receive focus, then removed when the overview closes.
             Image {
                 anchors.fill: parent
                 visible: root.previewWarmupActive
                     && root.previewWarmupBackdropReady
-                    && overviewWindow.warmupBackdropFrame !== null
-                source: overviewWindow.warmupBackdropFrame
-                    ? overviewWindow.warmupBackdropFrame.url
+                source: root.previewWarmupActive
+                        && root.previewWarmupBackdropRevision > 0
+                    ? "file://" + root.previewWarmupBackdropPath
+                        + "?revision=" + root.previewWarmupBackdropRevision
                     : ""
                 fillMode: Image.Stretch
                 cache: false
+                onStatusChanged: {
+                    if (status === Image.Ready
+                            && root.previewWarmupActive
+                            && !root.previewWarmupBackdropReady)
+                        root.showPreviewWarmupBackdrop();
+                }
             }
 
             Rectangle {

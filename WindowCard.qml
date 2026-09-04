@@ -21,7 +21,8 @@ Rectangle {
     readonly property bool inLayout: slot >= 0
     property bool hovered: false
     readonly property bool selected: card.acceptsKeyboard && inLayout && slot === card.controller.selectedIndex
-    readonly property bool focusedWindow: modelData === Hyprland.activeToplevel
+    readonly property bool focusedWindow: !card.controller.previewWarmupActive
+        && modelData === Hyprland.activeToplevel
     readonly property bool previewed: card.acceptsKeyboard && inLayout && slot === card.controller.previewIndex
     readonly property bool exitingPreview: card.acceptsKeyboard && inLayout && slot === card.controller.previewExitIndex
     readonly property bool floatingFooter: card.controller.windowFooterStyle === "floating"
