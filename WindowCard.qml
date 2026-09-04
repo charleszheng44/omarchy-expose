@@ -32,6 +32,7 @@ Rectangle {
     readonly property string applicationName: WindowModel.appIdFor(modelData) || "Application"
     readonly property string workspaceName: card.controller.workspaceName(modelData)
     readonly property string iconSource: card.controller.iconFor(modelData)
+    property var cachedPreview: null
     // Match Omarchy's panel borders, while keeping every card outline to one
     // physical pixel as requested.
     readonly property var outlineSpec: focusedWindow || selected
@@ -55,6 +56,14 @@ Rectangle {
         if (packedRectSource)
             packedRect = packedRectSource;
 
+    }
+    function cacheLivePreview() {
+        if (!livePreview.hasContent)
+            return;
+        livePreview.grabToImage(function(result) {
+            if (result)
+                card.cachedPreview = result;
+        });
     }
     visible: inLayout
     x: layoutRect.x
@@ -116,9 +125,7 @@ Rectangle {
 
                 readonly property real windowAspectRatio: card.controller.aspectRatioFor(card.modelData)
 
-                anchors.centerIn: parent
-                width: Math.min(parent.width, parent.height * windowAspectRatio)
-                height: Math.min(parent.height, parent.width / windowAspectRatio)
+                anchors.fill: parent
                 radius: Math.max(0, Style.cornerRadius - Style.spacing.xs)
                 color: Color.background
                 clip: true
@@ -126,23 +133,37 @@ Rectangle {
 
                 CardText {
                     anchors.centerIn: parent
+                    visible: !livePreview.hasContent && !card.cachedPreview
                     text: "Live preview unavailable"
                     opacity: 0.45
                 }
 
                 Item {
                     anchors.centerIn: parent
-                    width: parent.width * 2
-                    height: parent.height * 2
-                    scale: 0.5
+                    width: Math.min(parent.width, parent.height * previewFrame.windowAspectRatio)
+                    height: Math.min(parent.height, parent.width / previewFrame.windowAspectRatio)
                     layer.enabled: true
                     layer.smooth: true
 
-                    ScreencopyView {
+                    Image {
                         anchors.fill: parent
-                        captureSource: WindowModel.waylandFor(card.modelData)
-                        live: card.controller.opened && card.inLayout
+                        visible: !livePreview.hasContent && card.cachedPreview !== null
+                        source: card.cachedPreview ? card.cachedPreview.url : ""
+                        fillMode: Image.Stretch
+                        smooth: true
+                        cache: false
+                    }
+
+                    ScreencopyView {
+                        id: livePreview
+                        anchors.fill: parent
+                        captureSource: card.modelData ? card.modelData.wayland : null
+                        live: (card.controller.opened || card.controller.openingPending) && card.inLayout
                         paintCursor: false
+                        onHasContentChanged: {
+                            if (hasContent)
+                                Qt.callLater(card.cacheLivePreview);
+                        }
                     }
 
                 }

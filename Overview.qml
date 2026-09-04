@@ -141,6 +141,8 @@ Item {
     property bool previewSlowMotion: false
     property bool previewNavigationSlowMotion: false
     property bool openingPending: false
+    property bool previewWarmupActive: false
+    property var openingRestoreToplevel: null
     property bool settingsOpen: false
     property int settingsCategoryIndex: 0
     property bool footerHideConfirmationOpen: false
@@ -264,6 +266,7 @@ Item {
         root.motionTarget = 0;
         root.motionProgress = 0;
         root.openingPending = true;
+        root.openingRestoreToplevel = Hyprland.activeToplevel;
         root.refreshHyprlandState();
         root.resetSessionToplevels();
         root.selectedIndex = Math.max(0, root.filteredToplevels.indexOf(Hyprland.activeToplevel));
@@ -284,6 +287,7 @@ Item {
     }
 
     function startDismiss(notifyShell) {
+        root.cancelPreviewWarmup();
         root.openingPending = false;
         root.closeSettings();
         root.hoveredIndex = -1;
@@ -342,14 +346,52 @@ Item {
         if (!root.overviewScreenPinned)
             root.overviewScreenName = root.focusedMonitorName || root.keyboardScreenName;
         root.surfaceMounted = true;
-        Qt.callLater(function () {
-            if (!root.surfaceMounted || !root.openingPending)
-                return;
-            root.openingPending = false;
-            root.opened = true;
-            root.animateMotionTo(1);
-            root.focusKeyboardWindow();
-        });
+        Qt.callLater(root.startPreviewWarmup);
+    }
+
+    function startPreviewWarmup() {
+        if (!root.surfaceMounted || !root.openingPending)
+            return;
+        var hidden = [];
+        for (var index = 0; index < root.sessionToplevels.length; index++) {
+            var top = root.sessionToplevels[index];
+            if (WindowModel.needsPreviewWarmup(top))
+                hidden.push(top);
+        }
+        if (!hidden.length) {
+            root.finishOpenSurface();
+            return;
+        }
+        var command = [root.pluginDir + "/warm-previews", WindowModel.addressFor(root.openingRestoreToplevel)];
+        for (var hiddenIndex = 0; hiddenIndex < hidden.length; hiddenIndex++) {
+            var address = WindowModel.addressFor(hidden[hiddenIndex]);
+            if (address)
+                command.push(address);
+        }
+        if (command.length <= 2) {
+            root.finishOpenSurface();
+            return;
+        }
+        root.previewWarmupActive = true;
+        previewWarmupProcess.command = command;
+        previewWarmupProcess.running = true;
+    }
+
+    function cancelPreviewWarmup() {
+        root.previewWarmupActive = false;
+        if (previewWarmupProcess.running)
+            previewWarmupProcess.signal(15);
+        root.openingRestoreToplevel = null;
+    }
+
+    function finishOpenSurface() {
+        if (!root.surfaceMounted || !root.openingPending)
+            return;
+        root.openingPending = false;
+        root.opened = true;
+        root.openingRestoreToplevel = null;
+        root.animateMotionTo(1);
+        root.focusKeyboardWindow();
     }
 
     function animateMotionTo(target) {
@@ -807,7 +849,7 @@ Item {
     function handleDisplayStateChanged() {
         if (!root.surfaceMounted && !root.openingPending)
             return;
-        if (!root.overviewScreenPinned && (!root.surfaceMounted || root.openingPending))
+        if (!root.overviewScreenPinned && (!root.surfaceMounted || (root.openingPending && !root.previewWarmupActive)))
             root.overviewScreenName = root.focusedMonitorName || root.keyboardScreenName;
         var selectedTop = root.filteredToplevels[root.selectedIndex];
         root.hoveredIndex = -1;
@@ -1043,93 +1085,7 @@ Item {
         return root.liveAspectRatioFor(top);
     }
 
-    function assignCompositionRows(entries, rowCount) {
-        var rows = [];
-        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
-            rows.push({ entries: [], naturalWidth: 0 });
-
-        var ordered = entries.slice();
-        ordered.sort(function (a, b) {
-            if (a.ratio !== b.ratio)
-                return b.ratio - a.ratio;
-            return a.index - b.index;
-        });
-
-        for (var entryIndex = 0; entryIndex < ordered.length; entryIndex++) {
-            var bestRow = 0;
-            for (var candidateRow = 1; candidateRow < rows.length; candidateRow++) {
-                if (rows[candidateRow].naturalWidth < rows[bestRow].naturalWidth
-                        || (rows[candidateRow].naturalWidth === rows[bestRow].naturalWidth
-                            && rows[candidateRow].entries.length < rows[bestRow].entries.length))
-                    bestRow = candidateRow;
-            }
-            var entry = ordered[entryIndex];
-            rows[bestRow].entries.push(entry);
-            rows[bestRow].naturalWidth += entry.ratio;
-        }
-
-        for (var sortRow = 0; sortRow < rows.length; sortRow++)
-            rows[sortRow].entries.sort(function (a, b) { return a.index - b.index; });
-        return rows;
-    }
-
-    function composeRows(rows, scale, width, height, gap, padding, footerHeight) {
-        var measuredRows = [];
-        var totalHeight = 0;
-        var footerSpacing = footerHeight > 0 ? padding : 0;
-        for (var rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-            var entries = rows[rowIndex].entries;
-            var cards = [];
-            var totalWidth = Math.max(0, entries.length - 1) * gap;
-            var rowHeight = 0;
-            for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
-                var entry = entries[entryIndex];
-                // A shared preview height keeps every card in the row on the
-                // same top and bottom lines; width still follows the window's
-                // native aspect ratio.
-                var previewHeight = scale;
-                var previewWidth = previewHeight * entry.ratio;
-                var card = {
-                    index: entry.index,
-                    width: previewWidth + padding * 2,
-                    height: previewHeight + footerHeight + padding * 2 + footerSpacing
-                };
-                cards.push(card);
-                totalWidth += card.width;
-                rowHeight = Math.max(rowHeight, card.height);
-            }
-            if (totalWidth > width || rowHeight > height)
-                return null;
-            measuredRows.push({ cards: cards, width: totalWidth, height: rowHeight });
-            totalHeight += rowHeight;
-        }
-        totalHeight += Math.max(0, measuredRows.length - 1) * gap;
-        if (totalHeight > height)
-            return null;
-
-        var verticalGap = measuredRows.length > 1 ? gap : 0;
-        var y = (height - totalHeight) / 2;
-        var result = [];
-        for (var outputRow = 0; outputRow < measuredRows.length; outputRow++) {
-            var row = measuredRows[outputRow];
-            var horizontalGap = row.cards.length > 1 ? gap : 0;
-            var x = (width - row.width) / 2;
-            for (var cardIndex = 0; cardIndex < row.cards.length; cardIndex++) {
-                var card = row.cards[cardIndex];
-                result[card.index] = {
-                    x: x,
-                    y: y,
-                    width: card.width,
-                    height: card.height
-                };
-                x += card.width + horizontalGap;
-            }
-            y += row.height + verticalGap;
-        }
-        return result;
-    }
-
-    function computeWindowLayout(toplevels, width, height, gap, padding, footerHeight, viewportRatioHint) {
+    function computeWindowLayout(toplevels, width, height, gap) {
         var count = toplevels.length;
         if (!count || width <= 0 || height <= 0)
             return [];
@@ -1137,72 +1093,8 @@ Item {
         var edgeInset = gap / 2;
         var availableWidth = Math.max(1, width - edgeInset * 2);
         var availableHeight = Math.max(1, height - edgeInset * 2);
-        var entries = [];
-        for (var index = 0; index < count; index++) {
-            var ratio = root.aspectRatioFor(toplevels[index]);
-            entries.push({
-                index: index,
-                ratio: ratio,
-                extremity: Math.max(ratio, 1 / ratio)
-            });
-        }
-        entries.sort(function (a, b) {
-            if (a.extremity !== b.extremity)
-                return b.extremity - a.extremity;
-            return a.index - b.index;
-        });
-
-        var high = Math.min(availableWidth, availableHeight);
-        var footerSpacing = footerHeight > 0 ? padding : 0;
-        for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
-            var entry = entries[entryIndex];
-            high = Math.min(high,
-                (availableWidth - padding * 2) / entry.ratio,
-                availableHeight - footerHeight - padding * 2 - footerSpacing);
-        }
-        high = Math.max(1, high);
-
-        var best = null;
-        var bestScale = -1;
-        var minimumCardHeight = footerHeight + padding * 2 + footerSpacing + 1;
-        var maxRows = Math.max(1, Math.min(count, Math.floor((availableHeight + gap) / (minimumCardHeight + gap))));
-        var totalNaturalWidth = 0;
-        var totalNaturalHeight = 0;
-        for (var naturalIndex = 0; naturalIndex < entries.length; naturalIndex++) {
-            totalNaturalWidth += entries[naturalIndex].ratio;
-            totalNaturalHeight += 1;
-        }
-        var averageNaturalHeight = totalNaturalHeight / entries.length;
-        var viewportRatio = Number(viewportRatioHint);
-        if (!isFinite(viewportRatio) || viewportRatio <= 0)
-            viewportRatio = availableWidth / availableHeight;
-        var balancedRows = Math.round(Math.sqrt(totalNaturalWidth / Math.max(0.01, viewportRatio * averageNaturalHeight)));
-        var minimumRows = Math.max(1, Math.min(maxRows, balancedRows));
-        for (var rowCount = minimumRows; rowCount <= maxRows; rowCount++) {
-            var rows = root.assignCompositionRows(entries, rowCount);
-            var low = 0;
-            var rowHigh = high;
-            var rowBest = null;
-            for (var iteration = 0; iteration < 12; iteration++) {
-                var scale = (low + rowHigh) / 2;
-                var composed = root.composeRows(rows, scale, availableWidth, availableHeight, gap, padding, footerHeight);
-                if (composed) {
-                    rowBest = composed;
-                    low = scale;
-                } else {
-                    rowHigh = scale;
-                }
-            }
-            if (rowBest && low > bestScale) {
-                best = rowBest;
-                bestScale = low;
-            }
-        }
-        if (!best)
-            best = root.composeRows(root.assignCompositionRows(entries, 1), 1, availableWidth, availableHeight, gap, padding, footerHeight) || [];
+        var best = WindowModel.uniformGrid(count, availableWidth, availableHeight, gap);
         for (var resultIndex = 0; resultIndex < best.length; resultIndex++) {
-            if (!best[resultIndex])
-                continue;
             best[resultIndex].x += edgeInset;
             best[resultIndex].y += edgeInset;
         }
@@ -1408,6 +1300,16 @@ Item {
             root.previewNavigationSlowMotion = false;
             if (root.previewIndex < 0)
                 root.previewSlowMotion = false;
+        }
+    }
+
+    Process {
+        id: previewWarmupProcess
+        onExited: function (exitCode, exitStatus) { // qmllint disable signal-handler-parameters
+            if (!root.previewWarmupActive)
+                return;
+            root.previewWarmupActive = false;
+            root.finishOpenSurface();
         }
     }
 
@@ -1754,7 +1656,7 @@ Item {
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "expose-window-overview"
             WlrLayershell.layer: WlrLayer.Overlay
-            HyprlandWindow.opacity: root.motionProgress
+            HyprlandWindow.opacity: root.previewWarmupActive ? 1 : root.motionProgress
             BackgroundEffect.blurRegion: root.effectiveBackgroundBlur > 0 // qmllint disable missing-type
                     && !root.backgroundBlurFailed
                 ? backgroundBlurRegion
@@ -1974,10 +1876,7 @@ Item {
                         Layout.fillHeight: true
                         readonly property var windowLayout: {
                             var revision = root.modelRevision;
-                            var screenRatio = overviewWindow.screen && overviewWindow.screen.height > 0
-                                ? overviewWindow.screen.width / overviewWindow.screen.height
-                                : 0;
-                            return root.computeWindowLayout(overviewWindow.screenToplevels, width, height, Style.spacing.panelGap * 2, Style.spacing.sm, root.windowFooterHeight, screenRatio);
+                            return root.computeWindowLayout(overviewWindow.screenToplevels, width, height, Style.spacing.panelGap * 2);
                         }
 
                         Item {

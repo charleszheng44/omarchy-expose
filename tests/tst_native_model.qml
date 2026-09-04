@@ -16,11 +16,12 @@ TestCase {
                 mapped: true,
                 class: "native.class",
                 initialClass: "native.initial",
+                at: [0, 0],
                 size: [1600, 1000],
                 pinned: false
             })
             property var workspace: ({id: 2, name: "2"})
-            property var monitor: ({id: 0, name: "DP-1"})
+            property var monitor: ({id: 0, name: "DP-1", x: 0, y: 0, width: 3200, height: 1800, scale: 2})
             property var wayland: ({appId: "wayland.app"})
         }
     }
@@ -94,6 +95,28 @@ TestCase {
         toplevel.lastIpcObject = ({size: [100, Infinity]});
         compare(WindowModel.aspectRatioFor(toplevel), 1.6);
         toplevel.destroy();
+    }
+
+    function test_detectsWindowsOutsideTheVisibleScrollingViewport() {
+        var toplevel = createToplevel();
+        verify(!WindowModel.needsPreviewWarmup(toplevel));
+        toplevel.lastIpcObject = ({at: [-1700, 0], size: [1600, 1000]});
+        verify(WindowModel.needsPreviewWarmup(toplevel));
+        toplevel.lastIpcObject = ({at: [-100, 0], size: [1600, 1000]});
+        verify(!WindowModel.needsPreviewWarmup(toplevel));
+        toplevel.destroy();
+    }
+
+    function test_buildsUniformCenteredRows() {
+        var grid = WindowModel.uniformGrid(5, 1000, 600, 20);
+        compare(grid.length, 5);
+        for (var index = 1; index < grid.length; index++) {
+            compare(grid[index].width, grid[0].width);
+            compare(grid[index].height, grid[0].height);
+        }
+        compare(grid[3].y, grid[4].y);
+        verify(grid[3].x > grid[0].x);
+        verify(grid[4].x > grid[3].x);
     }
 
     function test_searchesAllNativeIdentityFields() {

@@ -63,6 +63,81 @@ function aspectRatioFor(toplevel) {
     return Math.max(0.45, Math.min(4, width / height));
 }
 
+function needsPreviewWarmup(toplevel) {
+    var ipc = ipcFor(toplevel);
+    var monitor = toplevel && toplevel.monitor ? toplevel.monitor : null;
+    var at = ipc.at || [];
+    var size = ipc.size || [];
+    if (!monitor || at.length < 2 || size.length < 2)
+        return false;
+
+    var scale = Number(monitor.scale);
+    var monitorX = Number(monitor.x);
+    var monitorY = Number(monitor.y);
+    var monitorWidth = Number(monitor.width) / (isFinite(scale) && scale > 0 ? scale : 1);
+    var monitorHeight = Number(monitor.height) / (isFinite(scale) && scale > 0 ? scale : 1);
+    var windowX = Number(at[0]);
+    var windowY = Number(at[1]);
+    var windowWidth = Number(size[0]);
+    var windowHeight = Number(size[1]);
+    if (![monitorX, monitorY, monitorWidth, monitorHeight, windowX, windowY, windowWidth, windowHeight]
+            .every(isFinite))
+        return false;
+
+    return windowX + windowWidth <= monitorX
+        || windowX >= monitorX + monitorWidth
+        || windowY + windowHeight <= monitorY
+        || windowY >= monitorY + monitorHeight;
+}
+
+function uniformGrid(count, width, height, gap) {
+    if (count <= 0 || width <= 0 || height <= 0)
+        return [];
+
+    var targetRatio = 1.6;
+    var best = null;
+    for (var columns = 1; columns <= count; columns++) {
+        var rows = Math.ceil(count / columns);
+        var cardWidth = (width - Math.max(0, columns - 1) * gap) / columns;
+        var cardHeight = (height - Math.max(0, rows - 1) * gap) / rows;
+        if (cardWidth <= 0 || cardHeight <= 0)
+            continue;
+        var scale = Math.min(cardWidth / targetRatio, cardHeight);
+        var emptySlots = columns * rows - count;
+        if (!best || scale > best.scale + 0.01
+                || (Math.abs(scale - best.scale) <= 0.01 && emptySlots < best.emptySlots)) {
+            best = {
+                columns: columns,
+                rows: rows,
+                width: cardWidth,
+                height: cardHeight,
+                scale: scale,
+                emptySlots: emptySlots
+            };
+        }
+    }
+    if (!best)
+        return [];
+
+    var gridHeight = best.rows * best.height + Math.max(0, best.rows - 1) * gap;
+    var originY = (height - gridHeight) / 2;
+    var result = [];
+    for (var index = 0; index < count; index++) {
+        var row = Math.floor(index / best.columns);
+        var column = index % best.columns;
+        var rowCount = Math.min(best.columns, count - row * best.columns);
+        var rowWidth = rowCount * best.width + Math.max(0, rowCount - 1) * gap;
+        var originX = (width - rowWidth) / 2;
+        result.push({
+            x: originX + column * (best.width + gap),
+            y: originY + row * (best.height + gap),
+            width: best.width,
+            height: best.height
+        });
+    }
+    return result;
+}
+
 function searchTextFor(toplevel) {
     var ipc = ipcFor(toplevel);
     return (appIdFor(toplevel) + " " + String(ipc.class || "") + " "

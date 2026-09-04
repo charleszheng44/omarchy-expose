@@ -6,7 +6,7 @@ macOS-style Exposé for Omarchy: one key or a hot corner shows every open window
 
 ## Highlights
 
-- **Live previews.** Cards are real screencopy views, so videos keep playing and terminals keep scrolling. The Omarchy desktop behind the grid stays live too.
+- **Live previews.** Visible windows use live screencopy views, so videos keep playing and terminals keep scrolling. Off-screen scrolling columns receive a fresh in-memory frame each time Exposé opens instead of showing an unavailable placeholder.
 - **Quick Look.** Space enlarges any preview and restores it again. Shift+Space does it in slow motion, like the classic macOS Easter egg.
 - **Search.** Just start typing to filter windows by title or application.
 - **Workspace scope.** Press Tab to switch between every window and windows on the current workspace. Per-monitor mode evaluates the current workspace of the selected display.
@@ -135,7 +135,7 @@ Exposé runs unsandboxed inside Omarchy Shell with your user's permissions.
 
 ## Troubleshooting
 
-- **No thumbnails:** verify Hyprland exposes toplevel-export support and no screen-capture policy blocks Quickshell. Cards stay usable with fallback labels.
+- **No thumbnails:** scrolling-layout windows are warmed once during opening so off-screen columns have previews too. If every card still lacks a thumbnail, verify Hyprland exposes toplevel-export support and no screen-capture policy blocks Quickshell.
 - **Workspace says “—”:** the native Hyprland model has not associated that Wayland toplevel yet. Very short-lived windows can briefly appear this way; restart Omarchy Shell if a normal window remains unassociated.
 - **Plugin not listed:** run `omarchy plugin validate .`, then `omarchy-shell shell rescanPlugins`.
 - **Shortcut does nothing:** run `hyprctl reload`, check `hyprctl configerrors`, and test `hyprctl dispatch 'hl.dsp.event("expose.window-overview:toggle")'` directly.

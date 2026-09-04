@@ -1,0 +1,31 @@
+#!/bin/bash
+set -uo pipefail
+
+restore_address="${1:-}"
+shift || true
+
+is_address() {
+  [[ ${1:-} =~ ^0x[0-9a-fA-F]+$ ]]
+}
+
+focus_window() {
+  local address="${1:-}"
+  is_address "$address" || return 0
+  hyprctl eval "hl.dispatch(hl.dsp.focus({ window = 'address:$address' }))" >/dev/null 2>&1 || true
+}
+
+restore_focus() {
+  focus_window "$restore_address"
+}
+
+trap restore_focus EXIT
+trap 'exit 0' INT TERM
+
+for address in "$@"; do
+  focus_window "$address"
+  sleep 0.12
+done
+
+restore_focus
+restore_address=""
+sleep 0.12
