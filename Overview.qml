@@ -142,7 +142,6 @@ Item {
     property bool previewNavigationSlowMotion: false
     property bool openingPending: false
     property bool previewWarmupActive: false
-    property var openingRestoreToplevel: null
     property bool settingsOpen: false
     property int settingsCategoryIndex: 0
     property bool footerHideConfirmationOpen: false
@@ -266,7 +265,6 @@ Item {
         root.motionTarget = 0;
         root.motionProgress = 0;
         root.openingPending = true;
-        root.openingRestoreToplevel = Hyprland.activeToplevel;
         root.refreshHyprlandState();
         root.resetSessionToplevels();
         root.selectedIndex = Math.max(0, root.filteredToplevels.indexOf(Hyprland.activeToplevel));
@@ -362,13 +360,13 @@ Item {
             root.finishOpenSurface();
             return;
         }
-        var command = [root.pluginDir + "/warm-previews", WindowModel.addressFor(root.openingRestoreToplevel)];
+        var command = [root.pluginDir + "/warm-previews"];
         for (var hiddenIndex = 0; hiddenIndex < hidden.length; hiddenIndex++) {
             var address = WindowModel.addressFor(hidden[hiddenIndex]);
             if (address)
                 command.push(address);
         }
-        if (command.length <= 2) {
+        if (command.length <= 1) {
             root.finishOpenSurface();
             return;
         }
@@ -381,7 +379,6 @@ Item {
         root.previewWarmupActive = false;
         if (previewWarmupProcess.running)
             previewWarmupProcess.signal(15);
-        root.openingRestoreToplevel = null;
     }
 
     function finishOpenSurface() {
@@ -389,7 +386,6 @@ Item {
             return;
         root.openingPending = false;
         root.opened = true;
-        root.openingRestoreToplevel = null;
         root.animateMotionTo(1);
         root.focusKeyboardWindow();
     }
